@@ -1,0 +1,4 @@
+serviceAccountKey.json
+venv/
+secrets.py
+ngrok_recovery_codes.txt
