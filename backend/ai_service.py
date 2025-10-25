@@ -1,6 +1,6 @@
 import google.generativeai as genai
 from google.generativeai.types import GenerationConfig
-from models import Poll # Import the Poll model we just defined
+from models import Poll, PollOption # Import the Poll model we just defined
 import os
 import json
 import dotenv
@@ -51,7 +51,7 @@ async def analyze_message_for_poll(message_text: str) -> Poll | None:
     """Analyzes a message and returns a Poll object or None."""
     
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash-latest",
+        model_name="gemini-2.5-flash",
         system_instruction=SYSTEM_PROMPT,
         generation_config=GenerationConfig(
             response_mime_type="application/json",
