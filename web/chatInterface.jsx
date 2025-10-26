@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, User, MessageSquare } from 'lucide-react';
 
-const API_BASE = 'https://cynthia-weatherworn-unprotestingly.ngrok-free.dev/api/v1'; // Update to your backend URL
+const API_BASE = 'https://cynthia-weatherworn-unprotestingly.ngrok-free.dev/api/v1';
+
+// ✅ Everyone joins this chat room
+const CHAT_ID = 'z1wwkb5jUwdw5H98oLq3';
 
 export default function ChatInterface() {
   const [username, setUsername] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [chatId, setChatId] = useState('');
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -21,6 +23,17 @@ export default function ChatInterface() {
     scrollToBottom();
   }, [messages]);
 
+  // ✅ Auto-refresh messages every 3 seconds when logged in
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const interval = setInterval(() => {
+      loadMessages();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [isLoggedIn]);
+
   const handleUsernameSubmit = async (e) => {
     e.preventDefault();
     if (!username.trim()) {
@@ -32,26 +45,9 @@ export default function ChatInterface() {
     setError('');
 
     try {
-      const response = await fetch(`${API_BASE}/chats`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          chat_name: 'General Chat',
-          user_ids: [username.trim()]
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create/join chat');
-      }
-
-      const data = await response.json();
-      setChatId(data.chat_id);
+      // Join the main chat room
       setIsLoggedIn(true);
-     
-      await loadMessages(data.chat_id);
+      await loadMessages();
     } catch (err) {
       setError('Failed to connect. Please try again.');
       console.error(err);
@@ -60,17 +56,37 @@ export default function ChatInterface() {
     }
   };
 
-  const loadMessages = async (id) => {
+  const loadMessages = async () => {
     try {
-      const response = await fetch(`${API_BASE}/chats/${id}/messages`);
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          setMessages(data);
+      const response = await fetch(`${API_BASE}/chats/${CHAT_ID}/messages`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
         }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('Messages loaded:', data);
+      
+      // Handle both response formats
+      if (data.messages && Array.isArray(data.messages)) {
+        setMessages(data.messages);
+      } else if (Array.isArray(data)) {
+        setMessages(data);
+      } else {
+        console.warn('Unexpected response format:', data);
+        setMessages([]);
       }
     } catch (err) {
       console.error('Failed to load messages:', err);
+      // Don't show error on auto-refresh, only on initial load
+      if (messages.length === 0) {
+        setError('Failed to load messages');
+      }
     }
   };
 
@@ -82,6 +98,7 @@ export default function ChatInterface() {
     setNewMessage('');
     setIsLoading(true);
 
+    // Optimistic UI update
     const tempMessage = {
       user_name: username,
       text: messageText,
@@ -91,10 +108,11 @@ export default function ChatInterface() {
     setMessages(prev => [...prev, tempMessage]);
 
     try {
-      const response = await fetch(`${API_BASE}/chats/${chatId}/messages`, {
+      const response = await fetch(`${API_BASE}/chats/${CHAT_ID}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
         },
         body: JSON.stringify({
           user_id: username,
@@ -108,12 +126,12 @@ export default function ChatInterface() {
       }
 
       const data = await response.json();
+      console.log('Message sent:', data);
      
-      setMessages(prev => prev.map(msg =>
-        msg.isTemp ? { ...msg, isTemp: false, message_id: data.message_id } : msg
-      ));
-
-      setTimeout(() => loadMessages(chatId), 1000);
+      // Remove temp message and reload to get the real one
+      setMessages(prev => prev.filter(msg => !msg.isTemp));
+      await loadMessages();
+      
     } catch (err) {
       setError('Failed to send message. Please try again.');
       setMessages(prev => prev.filter(msg => !msg.isTemp));
@@ -177,7 +195,7 @@ export default function ChatInterface() {
         <div style={styles.headerContent}>
           <div style={styles.headerLeft}>
             <MessageSquare size={24} color="#4F46E5" />
-            <h1 style={styles.headerTitle}>Chat Room</h1>
+            <h1 style={styles.headerTitle}>General Chat</h1>
           </div>
           <div style={styles.userBadge}>
             <User size={16} color="#4F46E5" />
@@ -197,7 +215,7 @@ export default function ChatInterface() {
           ) : (
             messages.map((msg, idx) => (
               <div
-                key={idx}
+                key={msg.message_id || idx}
                 style={{
                   ...styles.messageRow,
                   justifyContent: msg.user_name === username ? 'flex-end' : 'flex-start'
