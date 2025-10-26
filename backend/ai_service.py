@@ -129,18 +129,6 @@ PREFERENCE_SCHEMA = {
             },
             "required": ["cuisines_positive", "cuisines_negative", "price_range", "dietary_restrictions"]
         },
-        # "dynamic_attributes": {
-        #     "type": "object",
-        #     "description": "A dictionary where keys are categories (e.g., 'ambience', 'noise_level') and values are lists of descriptive tags.",
-        #     "properties": {
-        #         "type": "array",
-        #         "items": {"type": "string"}
-        #     },
-        #     "example": {
-        #         "ambience": ["cozy", "romantic"],
-        #         "noise_level": ["quiet"]
-        #     }
-        # },
         "summary": {
             "type": "string",
             "description": "A 1-sentence summary of what the group wants."

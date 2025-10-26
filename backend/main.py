@@ -4,6 +4,7 @@ import uvicorn
 import firebase_admin
 from firebase_admin import credentials, firestore
 from fastapi import FastAPI, BackgroundTasks, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from models import (
     ChatMessageRequest, VoteRequest, ChatMessageInDB, Poll, NewChatRequest,
     DecisionSession, ChatDocument, NewMemberRequest  # Import our new models
@@ -107,11 +108,14 @@ async def run_suggestion_trigger(chat_id: str):
         await post_message_to_chat(
             chat_id=chat_id,
             user_id="ai-assistant",
-            user_name="FoodieBot",
+            user_name="WeGoGo",
             text=ai_message_text
         )
+
+        # Send current_decision to Gemini to convert to Places API parameters
+
         
-        # (FUTURE: This is where you would also trigger the Google Places API search)
+        # Trigger the Google Places API search here (not implemented)
 
     except Exception as e:
         print(f"Error running suggestion trigger: {e}")
@@ -152,8 +156,40 @@ async def post_message_to_chat(chat_id: str, user_id: str, user_name: str, text:
     except Exception as e:
         print(f"Error posting AI message to chat: {e}")
 
+# --- 4. CORS Middleware ---
+# --- CORS Configuration ---
+# This is the crucial part for your friend's Vercel frontend.
+
+# 1. Get your friend's Vercel production URL (e.g., https://my-friends-app.vercel.app)
+# 2. Get their custom domain if they have one (e.g., https://www.their-cool-site.com)
+# 3. Add their local development URL (e.g., http://localhost:3000 for React/Next.js)
+
+origins = [
+    "https://we-go-snowy.vercel.app",  # Your friend's production Vercel URL
+]
+# If your friend uses Vercel's dynamic preview URLs (e.g., my-app-git-branch.vercel.app),
+# you might want to use a regex instead of listing all origins:
+# allow_origin_regex = r"https://.*\.vercel\.app"
+# If you use the regex, set allow_origins=[] or remove it.
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # The list of allowed origins
+    # allow_origin_regex=allow_origin_regex, # Uncomment this to use regex for Vercel previews
+    allow_credentials=True,  # Allow cookies and auth headers
+    allow_methods=["*"],  # Allow all methods (GET, POST, PUT, etc.)
+    allow_headers=["*"],  # Allow all headers
+)
+
 
 # --- 4. API Endpoints ---
+
+@app.get("/")
+async def root():
+    """
+    Root endpoint to check if the API is running.
+    """
+    return {"message": "CORS-enabled chat API is running!"}
 
 @app.post("/api/v1/chats/{chat_id}/messages", status_code=status.HTTP_202_ACCEPTED)
 async def post_message(
@@ -173,18 +209,6 @@ async def post_message(
         db.collection("chats").document(chat_id).collection("messages").add(db_doc)
         
         # 3. Atomically increment the message count for this chat
-        chat_ref = db.collection("chats").document(chat_id)
-        update_result = chat_ref.update({"message_count": firestore.Increment(1)})
-        
-        # Get the new count. We need a 'get' after 'update' if we use Increment
-        # A transaction would be safer, but this is simpler for now.
-        # Let's assume the count is "good enough" for batching.
-        # A more robust way is to use a transaction to get the count *after* increment.
-        
-        # For simplicity, let's just trigger the background task.
-        # We will fetch the count inside the task if needed, or just run on every message.
-        # Let's re-think: We need the count *now* to decide to run the batch.
-        
         # --- Let's use a transaction for safety ---
         transaction = db.transaction()
         chat_ref = db.collection("chats").document(chat_id)

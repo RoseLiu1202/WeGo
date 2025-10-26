@@ -62,10 +62,10 @@ class DecisionSession(BaseModel):
     
     # This is the new flexible map you wanted.
     # Example: {"ambience": ["cozy", "quiet"], "food_quality": ["light", "refreshing"]}
-    dynamic_attributes: dict[str, List[str]] = Field(
-        default_factory=dict, 
-        description="A flexible map of categorized preference tags."
-    )
+    # dynamic_attributes: dict[str, List[str]] = Field(
+    #     default_factory=dict, 
+    #     description="A flexible map of categorized preference tags."
+    # )
     
     # 'summary' is now correctly placed at the top level
     summary: str = Field(
