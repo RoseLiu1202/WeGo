@@ -4,7 +4,7 @@ import { Send, User, MessageSquare } from 'lucide-react';
 const API_BASE = 'https://cynthia-weatherworn-unprotestingly.ngrok-free.dev/api/v1';
 
 // ✅ Everyone joins this chat room
-const CHAT_ID = 'z1wwkb5jUwdw5H98oLq3';
+const CHAT_ID = 'd3TS2ZNJ5LmUEtzXRvNt';
 
 export default function ChatInterface() {
   const [username, setUsername] = useState('');
@@ -55,7 +55,7 @@ export default function ChatInterface() {
       setIsLoading(false);
     }
   };
-  
+
 const loadMessages = async () => {
   try {
     const url = `${API_BASE}/chats/${CHAT_ID}/messages`;
