@@ -55,40 +55,52 @@ export default function ChatInterface() {
       setIsLoading(false);
     }
   };
-
-  const loadMessages = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/chats/${CHAT_ID}/messages`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+  
+const loadMessages = async () => {
+  try {
+    const url = `${API_BASE}/chats/${CHAT_ID}/messages`;
+    console.log('Fetching from:', url);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true'
       }
-      
-      const data = await response.json();
-      console.log('Messages loaded:', data);
-      
-      // Handle both response formats
-      if (data.messages && Array.isArray(data.messages)) {
-        setMessages(data.messages);
-      } else if (Array.isArray(data)) {
-        setMessages(data);
-      } else {
-        console.warn('Unexpected response format:', data);
-        setMessages([]);
-      }
-    } catch (err) {
-      console.error('Failed to load messages:', err);
-      // Don't show error on auto-refresh, only on initial load
-      if (messages.length === 0) {
-        setError('Failed to load messages');
-      }
+    });
+    
+    console.log('Response status:', response.status);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
-  };
+    
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('Response is not JSON:', text);
+      throw new Error('Server returned non-JSON response');
+    }
+    
+    const data = await response.json();
+    console.log('Response data:', data);
+    
+    // Match your Swift FetchMessagesResponse structure
+    if (data.messages && Array.isArray(data.messages)) {
+      console.log('Successfully loaded', data.messages.length, 'messages');
+      setMessages(data.messages);
+    } else {
+      console.warn('No messages array in response:', data);
+      setMessages([]);
+    }
+    
+  } catch (err) {
+    console.error('Error loading messages:', err);
+    if (messages.length === 0) {
+      setError(`Failed to load messages: ${err.message}`);
+    }
+  }
+};
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
