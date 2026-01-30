@@ -1,160 +1,30 @@
 # [This is your new main.py]
 
 import uvicorn
-import firebase_admin
-from firebase_admin import credentials, firestore
+import asyncio
 from fastapi import FastAPI, BackgroundTasks, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from models import (
-    ChatMessageRequest, VoteRequest, ChatMessageInDB, Poll, NewChatRequest,
-    DecisionSession, ChatDocument, NewMemberRequest  # Import our new models
+    ChatMessageRequest, VoteRequest, ChatMessageInDB, NewChatRequest,
+    DecisionSession, ChatDocument, NewMemberRequest
 )
-from ai_service import analyze_message_for_poll, analyze_chat_for_preferences # Import both AI functions
-import uuid
+from database import db
+from chat_logic import process_new_message_tasks
+from listeners import start_listeners
 import datetime
+from firebase_admin import firestore
 
-# --- 1. Initialization ---
-
-cred = credentials.Certificate("serviceAccountKey.json")
-firebase_admin.initialize_app(cred)
-db = firestore.client()
 app = FastAPI()
 
-# --- 2. Background Task Orchestration ---
+# --- Startup Event ---
+@app.on_event("startup")
+async def startup_event():
+    # Get the current event loop
+    loop = asyncio.get_running_loop()
+    # Start the Firestore listener
+    # We store the watch object in app.state to keep it alive
+    app.state.chat_listener = start_listeners(loop)
 
-# This is our new "main brain" for background tasks
-async def process_new_message_tasks(
-    chat_id: str, 
-    message: ChatMessageInDB, 
-    current_message_count: int
-):
-    """
-    Orchestrates all background AI tasks after a message is posted.
-    """
-    
-    # --- Task 1: Check for User-Triggered Suggestion (e.g., "/find") ---
-    if message.text.strip().lower() == "/find-food":
-        print("User trigger '/find-food' detected. Running suggestion task.")
-        await run_suggestion_trigger(chat_id)
-        return # Stop other processing, the user wants action now
-    
-    # --- Task 2: Run Poll Analysis (Your existing logic) ---
-    # We still check every message for a potential poll
-    # await run_poll_analysis(chat_id, message)
-    
-    # --- Task 3: Run Rolling Preference Analysis (Mini-Batch) ---
-    # We run this every 4 messages to update the rolling preferences
-    if current_message_count % 4 == 0:
-        print(f"Message count {current_message_count}. Running rolling preference analysis.")
-        await run_preference_analysis(chat_id)
-
-async def run_poll_analysis(chat_id: str, message: ChatMessageInDB):
-    """
-    Analyzes a SINGLE message for a poll and saves it.
-    (This is your original 'run_ai_analysis' function)
-    """
-    print(f"Running Poll Analysis on: '{message.text}'")
-    poll = await analyze_message_for_poll(message.text)
-    
-    if poll:
-        print(f"AI generated poll: {poll.title}")
-        try:
-            poll_doc = poll.model_dump(mode="json")
-            db.collection("chats").document(chat_id).collection("polls").add(poll_doc)
-            print("Poll saved to Firestore.")
-        except Exception as e:
-            print(f"Error saving poll to Firestore: {e}")
-
-async def run_preference_analysis(chat_id: str):
-    """
-    Analyzes the chat history for rolling preferences and saves them.
-    """
-    chat_log = await get_chat_log(chat_id, limit=20)
-    if not chat_log:
-        print("No chat log found, skipping preference analysis.")
-        return
-
-    # Call our new Tier 2 AI function
-    decision_session = await analyze_chat_for_preferences(chat_log)
-    
-    # Save the result to the *main* chat document
-    try:
-        db.collection("chats").document(chat_id).update({
-            "current_decision": decision_session.model_dump(mode="json")
-        })
-        print(f"Rolling preferences updated for chat {chat_id}.")
-    except Exception as e:
-        print(f"Error updating preferences in Firestore: {e}")
-
-async def run_suggestion_trigger(chat_id: str):
-    """
-    Triggered by '/find-food'. Reads the current preferences and
-    posts a summary message back to the chat.
-    """
-    try:
-        # 1. Get the most recent preferences
-        doc_ref = db.collection("chats").document(chat_id)
-        doc = doc_ref.get()
-        if not doc.exists:
-            print("Chat doc not found for suggestion trigger.")
-            return
-
-        chat_data = ChatDocument(**doc.to_dict())
-        summary = chat_data.current_decision.summary
-        
-        # 2. Post a message back to the chat as the "assistant"
-        ai_message_text = f"Okay group, I'm on it! 🤖\nBased on our chat, I'm looking for: \"{summary}\""
-        
-        await post_message_to_chat(
-            chat_id=chat_id,
-            user_id="ai-assistant",
-            user_name="WeGoGo",
-            text=ai_message_text
-        )
-
-        # Send current_decision to Gemini to convert to Places API parameters
-
-        
-        # Trigger the Google Places API search here (not implemented)
-
-    except Exception as e:
-        print(f"Error running suggestion trigger: {e}")
-
-# --- 3. Helper Functions ---
-
-async def get_chat_log(chat_id: str, limit: int = 20) -> str:
-    """
-    Fetches the last N messages from Firestore and formats them
-    into a simple string log for the AI.
-    """
-    messages_ref = db.collection("chats").document(chat_id).collection("messages")
-    query = messages_ref.order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
-    docs = query.stream()
-    
-    chat_lines = []
-    for doc in docs:
-        msg = ChatMessageInDB(**doc.to_dict())
-        chat_lines.append(f"{msg.user_name}: {msg.text}")
-    
-    # Reverse to get chronological order for the AI
-    chat_lines.reverse()
-    return "\n".join(chat_lines)
-
-async def post_message_to_chat(chat_id: str, user_id: str, user_name: str, text: str):
-    """
-    A helper function for the AI to send a message to the chat.
-    """
-    try:
-        ai_message = ChatMessageInDB(
-            user_id=user_id,
-            user_name=user_name,
-            text=text
-        )
-        db_doc = ai_message.model_dump(mode="json")
-        db.collection("chats").document(chat_id).collection("messages").add(db_doc)
-        print(f"Posted AI message to chat {chat_id}")
-    except Exception as e:
-        print(f"Error posting AI message to chat: {e}")
 
 # --- 4. CORS Middleware ---
 # --- CORS Configuration ---
@@ -328,36 +198,7 @@ async def vote_on_poll(chat_id: str, poll_id: str, vote: VoteRequest):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/v1/chats/{chat_id}/messages")
-async def get_chat_messages(chat_id: str):
-    """
-    Fetch all messages for a chat room from Firestore
-    """
-    try:
-        # Reference to the messages collection for this chat
-        messages_ref = db.collection("chats").document(chat_id).collection("messages")
-        
-        # Get all messages, ordered by timestamp
-        messages_query = messages_ref.order_by("timestamp").stream()
-        
-        # Convert to list of dicts
-        message_list = []
-        for msg_doc in messages_query:
-            msg_data = msg_doc.to_dict()
-            message_list.append({
-                "message_id": msg_doc.id,  # Document ID from Firestore
-                "user_id": msg_data.get("user_id", ""),
-                "user_name": msg_data.get("user_name", ""),
-                "text": msg_data.get("text", ""),
-                "timestamp": msg_data.get("timestamp", datetime.datetime.now().isoformat())
-            })
-        
-        print(f"✅ Fetched {len(message_list)} messages for chat {chat_id}")
-        return {"messages": message_list}
-    
-    except Exception as e:
-        print(f"❌ Error fetching messages: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 # --- 5. Run the Server ---

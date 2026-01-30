@@ -76,6 +76,19 @@ class DecisionSession(BaseModel):
     last_updated: datetime.datetime = Field(default_factory=datetime.datetime.now)
 
 
+# --- Plces API Request Models ---
+class PlacesAPIFilterRequest(BaseModel):
+    """
+    The filter object sent to the Places API.
+    """
+    query: str
+    min_price: Optional[int] = None
+    max_price: Optional[int] = None
+    type: Optional[str] = "restaurant"
+    location: Optional["str"] = "38.648,-90.305"
+    radius: Optional[int] = 5000
+
+
 # --- Firestore Document Models ---
 
 class ChatDocument(BaseModel):
@@ -88,3 +101,13 @@ class ChatDocument(BaseModel):
     created_at: datetime.datetime
     message_count: int = 0
     current_decision: DecisionSession = Field(default_factory=DecisionSession)
+
+# --- Preference Extraction Schema (NEW FLEXIBLE VERSION) ---
+
+class PreferenceEntry(BaseModel):
+    user: str = Field(..., description="The user who has the preference")
+    preference: str = Field(..., description="The specific preference mentioned by the user, e.g., 'prefers', 'avoids'")
+    object: str = Field(..., description="The object of the preference, e.g., cuisine, price range")
+
+class PreferenceGroup(BaseModel):
+    preferences: List[PreferenceEntry] = Field(..., description="List of all preference entries from users, if any exist")
